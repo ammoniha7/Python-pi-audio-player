@@ -8,7 +8,11 @@ import RPi.GPIO as GPIO
 import datetime
 from datetime import datetime
 from os import walk
+global tracknum
+global albumnum
 
+albumnum = 0
+tracknum = 0
 
 
 IRsignalpin = 11
@@ -17,6 +21,7 @@ global fileNum
 global maxFileNum
 global fileList
 fileNum = 0
+fileList = []
 
 GPIO.setmode(GPIO.BOARD)
 GPIO.setup(IRsignalpin,GPIO.IN)
@@ -73,24 +78,37 @@ def getData(): #Pulls data from sensor
 	return binary
 	
 	
-fileList = os.listdir(r"/media/pi/MOMSMUSIC/momsmusic/workout/Cardio60")
-print(fileList)
-#time.sleep(20)
+mypath = r"/media/pi/MOMSMUSIC/momsmusic/workout/"
+#fileList = os.listdir(r"/media/pi/MOMSMUSIC/momsmusic/workout/Cardio60")
+#fileList = os.listdir(mypath)
+albumList = []
+for (dirpath, dirnames, filenames) in os.walk(mypath):
+	if len(filenames) == 0:
+		continue
+	#print(f"dirpath: {dirpath}")
+	#trackList = (os.path.join(dirpath,filename) for filename in filenames)
+	album = []
+	for filename in filenames:
+		album.append( dirpath+"/"+filename) 
+	#trackList = filenames
+	#print(f"YO")
+	#print(album)
+	albumList.append(album)
+for album in albumList:
+	print("====ALBUM====")
+	for track in album:
+		print(track)
+print("====END=====")
 
 maxFileIndex = len(fileList) -1
 print("hi")
-print("maxFileIndex[")
-print(maxFileIndex)
-print("]")
-#pro = subprocess.Popen("play " + fileList, stdout=subprocess.PIPE, shell=True, preexec_fn =os.setsid)
-
 
 def kickOff(fileName):
     global procHandle
     procHandle = subprocess.Popen(["play", '-q', fileName])
     
     
-kickOff("/media/pi/MOMSMUSIC/momsmusic/workout/Cardio60/" + fileList[fileNum])
+kickOff(albumList[albumnum][tracknum])
 
     
 while True:
@@ -103,17 +121,50 @@ while True:
         print("command matched")
         sys.stdout.flush()
         os.kill(procHandle.pid, signal.SIGTERM)
-        if fileNum < maxFileIndex:
+	
+
+	if tracknum < len(albumList[albumnum]) - 1:
+		tracknum += 1
+	else:
+		if albumnum < len(albumList) - 1:
+			albumnum += 1
+		else:
+			albumnum = 0
+		tracknum = 0
+			
+	kickOff(albumList[albumnum][tracknum])
+	print(albumList[albumnum][tracknum])
+	
+        """
+	if fileNum < maxFileIndex:
             fileNum += 1
-	    kickOff(fileList[fileNum])
+            kickOff(fileList[fileNum])
         else:
             fileNum = 0 # start over
         kickOff(fileList[fileNum])
-        
+        """
+	
+	
+    if command == "0x3e0e048b7L":
+	sys.stdout.flush()
+        os.kill(procHandle.pid, signal.SIGTERM)
+	
+	if albumnum < len(albumList) - 1:
+		albumnum += 1
+	else:
+		albumnum = 0
+	tracknum = 0
+
+	kickOff(albumList[albumnum][tracknum])
+        print(albumList[albumnum][tracknum])
+    
+    
     else:
         print("command not recognized, doing nothing")
         sys.stdout.flush()        
         #exit
+
+	
 
 
 
