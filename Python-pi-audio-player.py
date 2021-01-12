@@ -1,254 +1,181 @@
 #!/usr/bin/python3.7
-import time
 import sys
 import os
 import signal
 import subprocess
-import RPi.GPIO as GPIO
+import threading
 import pyttsx3
-import datetime
 import json
-from datetime import datetime
+import time
 from os import walk
+import IrDecoder
 
-global albumnum
-albumnum = 0
-global tracknum
-tracknum = 0
-global songplaying
-songplaying = 1
-global procHandle
-global fileNum
-fileNum = 0
-global maxFileNum
-global fileList
-fileList = []
-global volumepercent
-volumepercent = 80
-global pathToMusic
-pathToMusic = r"/media/pi/Moms Eh/moms/workout/"
-global stateFileName
-stateFileName = '/home/pi/Documents/python project for mom/lastPlayedTrack.json'
-#global stateFileHandle
+class PiPlayer:
+	def __init__(self):
+		self.PATH_TO_MUSIC = r"/home/pi/Music/moms/workout/"
+		self.STATE_FILE_NAME = '/home/pi/Documents/pi-player/lastPlayedTrack.json'
+		self.albumnum = 0
+		self.tracknum = 0
+		self.albumList = []
+		getVolCommand = 'amixer -c 0 get Headphone | grep -oP "\[\d*%\]" | sed s:[][%]::g'
+		self.volumepercent = int(subprocess.getoutput(getVolCommand))
+		self.speakEngine = pyttsx3.init()
+		self.procHandle = None
+		self.currSongIndex = 0
 
-IRsignalpin = 11
-GPIO.setmode(GPIO.BOARD)
-GPIO.setup(IRsignalpin,GPIO.IN)
+	def readLastPlaybackState(self):
+		if (os.path.isfile(self.STATE_FILE_NAME)):  # TODO learn how to check for file exists in the "with open" below and go on without crashing
+			with open(self.STATE_FILE_NAME,'r') as stateFileHandle:
+				[self.albumnum, self.tracknum] = json.load(stateFileHandle)
 
+	def writeCurrentPlaybackState(self):
+		with open(self.STATE_FILE_NAME,'w') as stateFileHandle:
+			json.dump([self.albumnum, self.tracknum],stateFileHandle)
 
-#Defines Subs
-def ConvertHex(BinVal): #Converts binary data to hexidecimal
-	tmpB2 = int(str(BinVal), 2)
-	return hex(tmpB2)
+	def speakAlbumName(self):
+		fullPathSplit = self.albumList[self.albumnum][self.tracknum].split("/")
+		albumName = fullPathSplit[-2]
+		self.speakEngine.say(albumName)
+		self.speakEngine.runAndWait()
 
-def getData(): #Pulls data from sensor
-	num1s = 0 #Number of consecutive 1s
-	command = [] #Pulses and their timings
-	binary = 1 #Decoded binary command
-	previousValue = 0 #The previoos.system("amixer sset HDMI 0%")us pin state
-	value = GPIO.input(IRsignalpin) #Current pin state
-	
-	while value: #Waits until pin is pulled low
-		global tracknum
-		global albumnum
-		value = GPIO.input(IRsignalpin)
-		poll = procHandle.poll()
-		if poll != None and songplaying == 1:
-			if tracknum < len(albumList[albumnum]) - 1:
-				tracknum += 1
-			else:
-				if albumnum < len(albumList) - 1:
-					albumnum += 1
-				else:
-					albumnum = 0
-				tracknum = 0
-				kickOff(albumList[albumnum][tracknum])
-				print(albumList[albumnum][tracknum])
-		else: 
-			continue 
-	
-	startTime = datetime.now() #Sets start time
-	
-	while True:
-		if value != previousValue: #Waits until change in state occurs
-			now = datetime.now() #Records the current time
-			pulseLength = now - startTime #Calculate time in between pulses
-			startTime = now #Resets the start time
-			command.append((previousValue, pulseLength.microseconds)) #Adds pulse time to array (previous val acts as an alternating 1 / 0 to show whether time is the on time or off time)
-		
-		#Interrupts code if an extended high period is detected (End Of Command)	
-		if value:
-			num1s += 1
-		else:
-			num1s = 0
-		
-		if num1s > 10000:
-			break
-		
-		#Reads values again
-		previousValue = value
-		value = GPIO.input(IRsignalpin)
-		
-	#Covers data to binary
-	for (typ, tme) in command:
-		if typ == 1:
-			if tme > 1000: #According to NEC protocol a gap of 1687.5 microseconds repesents a logical 1 so over 1000 should make a big enough distinction
-				binary = binary * 10 + 1
-			else:
-				binary *= 10
-				
-	if len(str(binary)) > 34: #Sometimes the binary has two rouge charactes on the end
-		binary = int(str(binary)[:34])
-		
-	return binary
+	def playSongFile(self, fileName, songIndex):
+		print("Now playing", fileName)
+		def onExit():
+			print("songIndex", songIndex, "killed. currIndex:", self.currSongIndex)
+			if self.currSongIndex == songIndex:
+				self.playNextTrack()
+		def runInThread(onExit):
+			self.writeCurrentPlaybackState()
+			self.procHandle = subprocess.Popen(["play", '-q', fileName, '-t', 'alsa'])
+			self.procHandle.wait()
+			onExit()
+			return
+		thread = threading.Thread(target=runInThread, args=[onExit]) #todo: if nothing points to this thread, does it die by garbage collection?
+		thread.start()
 
-def readLastPlaybackState():
-	global albumnum
-	global tracknum
-	global stateFileName
-#	global stateFileHandle
-	if (os.path.isfile(stateFileName)):  # TODO learn how to check for file exists in the "with open" below and go on without crashing
-		with open(stateFileName,'r') as stateFileHandle:
-			[albumnum,tracknum] = json.load(stateFileHandle)
-
-def writeCurrentPlaybackState():
-	global albumnum
-	global tracknum
-#	global stateFileHandle
-	global stateFileName
-	with open(stateFileName,'w') as stateFileHandle:
-		json.dump([albumnum,tracknum],stateFileHandle)
-
-albumList = []
-for (dirpath, dirnames, filenames) in os.walk(pathToMusic):
-	if len(filenames) == 0:
-		continue
-	album = []
-	for filename in filenames:
-		album.append(dirpath+"/"+filename) 
-	albumList.append(album)
-for album in albumList:
-	print("====ALBUM====")
-	for track in album:
-		print(track)
-print("====END=====")
-
-readLastPlaybackState()
-writeCurrentPlaybackState()
-#stateFileHandle = open(stateFileName,'w')
-
-speakEngine = pyttsx3.init()
-
-def kickOff(fileName):
-	global procHandle
-	writeCurrentPlaybackState()
-	procHandle = subprocess.Popen(["play", '-q', fileName])
-
-kickOff(albumList[albumnum][tracknum])
-
-while True:
-	sys.stdout.flush()
-	command = ConvertHex(getData())
-	sys.stdout.flush()
-
-	if (command == "0x3e0e016e9" or command == "0x300ffe21d"): #next track
-		print(f"{command} - Next track")
+	def playNextTrack(self):
+		print("Next track")
 		sys.stdout.flush()
-		os.kill(procHandle.pid, signal.SIGTERM)
-		if tracknum < len(albumList[albumnum]) - 1:
-			tracknum += 1
+		self.currSongIndex += 1
+		self.procHandle.terminate()
+		if self.tracknum < len(self.albumList[self.albumnum]) - 1:
+			self.tracknum += 1
 		else:
-			if albumnum < len(albumList) - 1:
-				albumnum += 1
-			else:
-				albumnum = 0
-			tracknum = 0
+			self.incrementAlbumNum()
 
-		kickOff(albumList[albumnum][tracknum])
-		print(albumList[albumnum][tracknum])
-	
-	elif (command == "0x3e0e048b7" or command == "0x300ff629d"): #next Album
-		print(f"{command} - Next Album")
+		self.playSongFile(self.albumList[self.albumnum][self.tracknum], self.currSongIndex)
+
+	def playPreviousTrack(self):
+		print("Previous track")
 		sys.stdout.flush()
-		os.kill(procHandle.pid, signal.SIGTERM)
-
-		if albumnum < len(albumList) - 1:
-			albumnum += 1
+		self.currSongIndex += 1
+		self.procHandle.terminate()
+		if self.tracknum > 0:
+			self.tracknum -= 1
 		else:
-			albumnum = 0
-		tracknum = 0
-		
-		speakEngine.say(albumList[albumnum][tracknum])
-		speakEngine.runAndWait()
-		kickOff(albumList[albumnum][tracknum])
-		print(albumList[albumnum][tracknum])
-		
-	elif (command == "0x3e0e008f7" or command == "0x300ffc23d"): #prev track
-		print(f"{command} - prev track")
+			self.decrementAlbumNum()
+
+		self.playSongFile(self.albumList[self.albumnum][self.tracknum], self.currSongIndex)
+
+	def playNextAlbum(self):
+		print("Next Album")
 		sys.stdout.flush()
-		os.kill(procHandle.pid, signal.SIGTERM)
-		if tracknum > 0:
-			tracknum -= 1
-		else:
-			if albumnum > len(albumList) - 1:
-				albumnum -= 1
-			else:
-				albumnum = 0
-			tracknum = 0
+		self.currSongIndex += 1
+		self.procHandle.terminate()
+		self.incrementAlbumNum()
+		self.playSongFile(self.albumList[self.albumnum][self.tracknum], self.currSongIndex)
 
-		kickOff(albumList[albumnum][tracknum])
-		print(albumList[albumnum][tracknum])
-	
-	elif (command == "0x300ff02fd"): #Prev album
-		print(f"{command} - Prev album")
+	def incrementAlbumNum(self):
+		if self.albumnum < len(self.albumList) - 1:
+			self.albumnum += 1
+		else:
+			self.albumnum = 0
+		self.tracknum = 0
+		self.speakAlbumName()
+
+	def playPreviousAlbum(self):
+		print("Previous album")
 		sys.stdout.flush()
-		os.kill(procHandle.pid, signal.SIGTERM)
+		self.currSongIndex += 1
+		self.procHandle.terminate()
+		self.decrementAlbumNum()
+		self.playSongFile(self.albumList[self.albumnum][self.tracknum], self.currSongIndex)
 
-		if albumnum > 0:
-			albumnum -= 1
+	def decrementAlbumNum(self):
+		if self.albumnum > 0:
+			self.albumnum -= 1
 		else:
-			albumnum = len(albumList) - 1
-		tracknum = 0
-		print(f"album[{albumnum}] track[{tracknum}]")
+			self.albumnum = len(self.albumList) - 1
+		self.tracknum = 0
+		self.speakAlbumName()
 
-		kickOff(albumList[albumnum][tracknum])
-		print(albumList[albumnum][tracknum])
-	
-	elif (command == "0x3e0e0e01f" or command == "0x300ffa25d"): #volume up 
-		print(f"{command}-Volume up")
-		if volumepercent <= 95:
-			volumepercent += 5
-			os.system(f"amixer sset HDMI {volumepercent}%")
-			print(f"volume set to {volumepercent} %")
+	def volumeUp(self):
+		print("Volume up")
+		if self.volumepercent <= 95:
+			self.volumepercent += 5
+			os.system(f"amixer -c 0 sset Headphone {self.volumepercent}%")
+			print(f"volume set to {self.volumepercent} %")
 		else:
 			print("volume all the way up")
 
-	
-	elif (command == "0x3e0e0d02f" or command == "0x300ff22dd"): #volume down
-		print(f"{command}-Volume down")
-		if volumepercent >= 5:
-			volumepercent -= 5
-			os.system(f"amixer sset HDMI {volumepercent}%")
-			print(f"volume set to {volumepercent} %")
+	def volumeDown(self):
+		print("Volume down")
+		if self.volumepercent >= 5:
+			self.volumepercent -= 5
+			os.system(f"amixer -c 0 sset Headphone {self.volumepercent}%")
+			print(f"volume set to {self.volumepercent} %")
 		else:
 			print("voluume all the way down")
-			
-	elif (command == "0x300ff906f"):
-		if (songplaying == 1):
-			songplaying = 0
+
+	def playOrStop(self):
+		print("Play or stop")
+		if self.songPlaying:
+			self.songPlaying = False
 			sys.stdout.flush()
-			os.kill(procHandle.pid, signal.SIGTERM)
-			
+			self.currSongIndex += 1
+			self.procHandle.terminate()
 		else:
-			songplaying = 1
-			kickOff(albumList[albumnum][tracknum])
-		
-	else:
-		if (len(command) > 5):
-			print(f"{command} not recognized")
-			sys.stdout.flush()        
-		else:
-			continue
-			
-		#exit
-		#how to find the proces wiht play: ps -ef |grep play
+			self.songPlaying = True
+			self.playSongFile(self.albumList[self.albumnum][self.tracknum], self.currSongIndex)
+
+	def start(self):
+		for (dirpath, dirnames, filenames) in os.walk(self.PATH_TO_MUSIC):
+			if len(filenames) == 0:
+				continue
+			album = []
+			for filename in filenames:
+				album.append(dirpath+"/"+filename)
+			self.albumList.append(album)
+
+		self.readLastPlaybackState()
+		self.writeCurrentPlaybackState()
+		self.songPlaying = True
+		self.playSongFile(self.albumList[self.albumnum][self.tracknum], self.currSongIndex)
+
+		while True:
+			sys.stdout.flush()
+			command = IrDecoder.ConvertHex(IrDecoder.getData())
+			sys.stdout.flush()
+
+			if (command == "0x3e0e016e9" or command == "0x300ffe21d"): #next track
+				self.playNextTrack()
+			elif (command == "0x3e0e048b7" or command == "0x300ff629d"): #next Album
+				self.playNextAlbum()
+			elif (command == "0x3e0e008f7" or command == "0x300ffc23d"): #prev track
+				self.playPreviousTrack()
+			elif (command == "0x300ff02fd"): #Prev album
+				self.playPreviousAlbum()
+			elif (command == "0x3e0e0e01f" or command == "0x300ffa25d"): #volume up
+				self.volumeUp()
+			elif (command == "0x3e0e0d02f" or command == "0x300ff22dd"): #volume down
+				self.volumeDown()
+			elif (command == "0x300ff906f"): #play/stop
+				self.playOrStop()
+			else:
+				if (len(command) > 5):
+					print(f"command {command} not recognized")
+					sys.stdout.flush()
+
+if __name__ == "__main__":
+	pi_player = PiPlayer()
+	pi_player.start()
