@@ -4,10 +4,11 @@ import os
 import signal
 import subprocess
 import threading
-import pyttsx3
 import json
 import time
 from os import walk
+import playsound
+from gtts import gTTS
 import IrDecoder
 
 class PiPlayer:
@@ -19,7 +20,6 @@ class PiPlayer:
 		self.albumList = []
 		getVolCommand = 'amixer -c 0 get Headphone | grep -oP "\[\d*%\]" | sed s:[][%]::g'
 		self.volumepercent = int(subprocess.getoutput(getVolCommand))
-		self.speakEngine = pyttsx3.init()
 		self.procHandle = None
 		self.currSongIndex = 0
 
@@ -35,8 +35,10 @@ class PiPlayer:
 	def speakAlbumName(self):
 		fullPathSplit = self.albumList[self.albumnum][self.tracknum].split("/")
 		albumName = fullPathSplit[-2]
-		self.speakEngine.say(albumName)
-		self.speakEngine.runAndWait()
+		tts = gTTS(text=albumName, lang="en")
+		filename = "/home/pi/Documents/pi-player/currAlbumName.mp3"
+		tts.save(filename)
+		playsound.playsound(filename)
 
 	def playSongFile(self, fileName, songIndex):
 		print("Now playing", fileName)
