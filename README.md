@@ -3,15 +3,15 @@ A basic audio player for the raspberry pi that can be controlled with an IR remo
 
 ## Dependencies
 ### External Dependencies
-sox, gstreamer-1.0, python3-gst-1.0
+sox
 ``` shell
-sudo apt install sox gstreamer-1.0 python3-gst-1.0
+sudo apt install sox libsox-fmt-all
 ```
 
 ### Python Dependencies
-playsound, gTTS
+gTTS
 ```shell
-pip3 install playsound gTTS
+pip3 install gTTS
 ```
 
 ### Infrared Sensor
