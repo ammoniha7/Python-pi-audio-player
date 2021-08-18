@@ -12,8 +12,8 @@ from speaktext import speak_text
 # todo: make sure stereo channels working
 
 class PiPlayer:
-	MUSIC_PATH = "/home/pi/Music/moms/workout/"
-	# MUSIC_PATH = r"/media/pi/Moms Eh/moms/workout/"
+	MUSIC_PATH = "/home/pi/Music/Dynamix"
+	# MUSIC_PATH = r"/media/pi/Moms Eh/Music/Dynamix"
 	STATE_FILE_PATH = os.path.join(Path(__file__).resolve().parent, "state.json")
 	VOLUME_CHANGE_DELTA = 5
 
@@ -36,6 +36,8 @@ class PiPlayer:
 			album.sort(key=lambda path: path.split("/")[-1])
 			self.album_list.append(album)
 		self.album_list.sort(key=lambda album: album[0].split("/")[-2])
+		if len(self.album_list) == 0:
+			raise Exception("No audio found at path: " + PiPlayer.MUSIC_PATH)
 
 	def _get_curr_vol_percent(self):
 		GET_VOL_CMD = 'amixer -c 0 get Headphone | grep -oP "\[\d*%\]" | sed s:[][%]::g'
