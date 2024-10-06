@@ -17,6 +17,8 @@ class IRRemoteControl:
             pi_player.volume_down()
         elif input == "0x300ff906f":
             pi_player.song_play_pause()
+        elif input == "0x300ffa857":
+            pi_player.switch_collection()
         elif len(input) > 5:
             print(f"input {input} not recognized", flush=True)
 

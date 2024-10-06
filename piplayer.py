@@ -12,7 +12,7 @@ from speaktext import speak_text
 # todo: make sure stereo channels working
 
 class PiPlayer:
-	MUSIC_PATH = "/home/pi/Music/Dynamix"
+	MUSIC_PATH = "/home/pi/Music"
 	# MUSIC_PATH = r"/media/pi/Moms Eh/Music/Dynamix"
 	STATE_FILE_PATH = os.path.join(Path(__file__).resolve().parent, "state.json")
 	VOLUME_CHANGE_DELTA = 5
@@ -20,24 +20,29 @@ class PiPlayer:
 	def __init__(self):
 		self.album_num = 0
 		self.track_num = 0
-		self.album_list = []
+		self.collection_list = []
 		self.volume_percent = self._get_curr_vol_percent()
 		self.play_song_thread = None
 		self._build_album_list()
 		self._read_last_playback_state()
 
 	def _build_album_list(self):
-		for dirpath, dirnames, filenames in os.walk(PiPlayer.MUSIC_PATH):
-			if len(filenames) == 0:
-				continue
-			album = []
-			for filename in filenames:
-				album.append(os.path.join(dirpath, filename))
-			album.sort(key=lambda path: path.split("/")[-1])
-			self.album_list.append(album)
-		self.album_list.sort(key=lambda album: album[0].split("/")[-2])
-		if len(self.album_list) == 0:
-			raise Exception("No audio found at path: " + PiPlayer.MUSIC_PATH)
+		collections = os.listdir(PiPlayer.MUSIC_PATH)
+		for collection in collections:
+			album_list = []
+			for dirpath, dirnames, filenames in os.walk(collection):
+				if len(filenames) == 0:
+					continue
+				album = []
+				for filename in filenames:
+					album.append(os.path.join(dirpath, filename))
+				album.sort(key=lambda path: path.split("/")[-1])
+				album_list.append(album)
+			album_list.sort(key=lambda album: album[0].split("/")[-2])
+			if len(album_list) == 0:
+				raise Exception("No audio found at path: " + PiPlayer.MUSIC_PATH)
+			self.collection_list.append(album_list)
+		self.collection_list.sort(key=lambda album: album[0].split("/")[-2])
 
 	def _get_curr_vol_percent(self):
 		GET_VOL_CMD = 'amixer -c 0 get Headphone | grep -oP "\[\d*%\]" | sed s:[][%]::g'
